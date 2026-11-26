@@ -188,6 +188,10 @@
   .petcard{display:flex;gap:8px;align-items:center;background:#2e2219;border:3px solid #4a3426;padding:6px;cursor:pointer}
   .petcard canvas{width:44px;height:44px;image-rendering:pixelated;background:#2f6b3a;flex:none}
   .petcard.sel{border-color:#fde047}.petcard.lock{opacity:.4;cursor:not-allowed}
+
+  .nd{padding:6px 0;border-bottom:1px solid #4a3426;font-size:12.5px}.nd .bar{margin:3px 0}
+  .nd .chip{display:inline-block;background:#3b281c;border:1px solid #6d4a33;border-radius:6px;padding:1px 6px;margin:2px 3px 0 0;white-space:nowrap}
+  .nd .chip.todo{background:#7c2d12;border-color:#ea580c}.nd .chip.ok{background:#14532d;border-color:#22c55e}
 </style>
 </head>
 <body>
@@ -273,6 +277,7 @@
       <div id="tControls" class="row"></div>
     </div>
     <div class="tcard" data-tab="aula" id="tLive"></div>
+    <div class="tcard" data-tab="aula"><b>📌 O que falta em cada obra</b><div id="tNeed" style="margin-top:6px"></div></div>
     <div class="tcard" data-tab="aula">
       <b>Quadro Kanban</b> <span class="mut" style="font-size:12px">(🗳️ votos dos POs · 🔒 depende de outra obra)</span>
       <div class="kan" style="margin-top:8px">
@@ -564,7 +569,7 @@ const hardLocked=b=>(isEast(b)&&!hasB('ponte')&&!hasB('portal'))||(isWest(b)&&b.
 const lockMsg=b=>isWest(b)?'🔒 Precisa da Ponte de Pedra':'🔒 Precisa da Ponte';
 const BOBJ=id=>BUILDINGS.find(x=>x.id===id);
 function missingDeps(b){return (b.req||[]).filter(r=>!hasB(r))}
-function capEff(){return (meta.cap||3)+(hasB('casas')?1:0)}
+function capEff(){const n=nOn();const c=Math.min(meta.cap||3,n<=8?2:n<=14?3:9);return c+(hasB('casas')?1:0)}
 const stars=n=>'★'.repeat(n)+'☆'.repeat(3-n);
 /* problemas que aparecem nas obras — cada classe resolve o seu */
 const ISSUES={
@@ -575,11 +580,15 @@ const ISSUES={
 };
 function issuesOf(st){let n=0;for(const k in ISSUES)n+=(st&&st[k])||0;return n+((st&&st.imp)?1:0)}
 function issueIcons(st){let h='';if(st&&st.imp)h+='⚠️';for(const k in ISSUES)if(st&&st[k]>0)h+=ISSUES[k].ic+(st[k]>1?st[k]:'');return h}
+const nOn=()=>Math.max(1,(meta&&meta.n)||Object.keys(typeof activePlayers==='function'?activePlayers():{}).length||1);
+const loadK=n=>n<=6?0.5:n<=10?0.6:n<=16?0.8:n<=22?0.9:1; // menos trabalho por obra quando há poucos alunos
+const smallTeam=()=>nOn()<=10;
 function reqsFor(b,meta,st){
   const cnt=(meta&&meta.cnt)||{}, f=(meta&&meta.f)||2, out={};
   const softMiss=!(st&&st.lvl)&&(b.req||[]).some(r=>r!=='ponte'&&r!=='ponte_lava'&&!hasB(r));
   const disc=(hasB('mercado')?0.85:1)*(1-0.1*Math.min(3,(st&&st.ref)||0))*(softMiss?1.5:1)*((st&&st.lvl)?1.4:1); // Mercado/refinamento barateiam; sem a obra base +50%; melhoria Nv.2 ×1.4
-  for(const k of REQ_KEYS){ const n=cnt[k]||0; if(n>0) out[k]=Math.max(1,Math.ceil(b.base[k]/2*n*f*disc)); }
+  const lk=loadK((meta&&meta.n)||Object.values(cnt).reduce((a,v)=>a+v,0)||30);
+  for(const k of REQ_KEYS){ const n=cnt[k]||0; if(n>0) out[k]=Math.max(1,Math.ceil(b.base[k]/2*n*f*disc*lk)); }
   if(!Object.keys(out).length) out.dev=Math.ceil(b.base.dev*f*disc); // ninguém na sala ainda
   const ex=(st&&st.extra)||{};for(const k in ex)if(out[k]!==undefined)out[k]+=ex[k];
   return out;
@@ -1438,7 +1447,7 @@ window.dropChest=function(r){const sp=chestSpot();net.push(`${R()}/chests`,{x:sp
 function chestTick(){
   if(meta.phase!=='sprint')return;if(!nextChestAt)nextChestAt=Date.now()+30000;
   if(Date.now()<nextChestAt)return;nextChestAt=Date.now()+35000+Math.random()*30000;
-  if(Object.keys(chests||{}).length>=3)return;const x=Math.random();dropChest(x<0.1?'l':x<0.4?'r':'c');
+  if(Object.keys(chests||{}).length>=(smallTeam()?2:3))return;const x=Math.random();dropChest(x<0.1?'l':x<0.4?'r':'c');
 }
 function drawChests(g,t,big,list,inView){
   for(const id in (chests||{})){const c=chests[id];if(!c||typeof c.x!=='number'||!inView(c.x,c.y))continue;
@@ -1914,9 +1923,9 @@ window.startCrisis=function(type){
   const cand=sprintCand();const cnt=classCounts();
   if(!type){const av=crisisTypesAvailable();if(!av.length)return;type=rnd(av)}
   const c={type,start:net.now(),ends:net.now()+(CRISES[type].dur+(hasB('bombeiros')&&type!=='mudanca'?20:0))*1000};
-  if(type==='servidor'){const n=Object.keys(activePlayers()).length;c.need=Math.max(2,Math.min(n,rnd([4,6,8,10,12])-(hasB('praca')?2:0)));c.here=0;const sp=rnd(SPOTS);c.sx=sp.x;c.sy=sp.y;c.sn=sp.nome}
+  if(type==='servidor'){const n=Object.keys(activePlayers()).length;c.need=n<=10?Math.max(2,Math.min(Math.ceil(n*0.7),rnd([3,4,5])-(hasB('praca')?1:0))):Math.max(2,Math.min(n,rnd([4,6,8,10,12])-(hasB('praca')?2:0)));c.here=0;const sp=rnd(SPOTS);c.sx=sp.x;c.sy=sp.y;c.sn=sp.nome}
   const k=CRISES[type].issue;
-  if(k)cand.forEach(b=>net.tx(`${R()}/backlog/${b.id}`,st=>{if(st){st[k]=(st[k]||0)+2;st.ready=false}return st}));
+  if(k)cand.forEach(b=>net.tx(`${R()}/backlog/${b.id}`,st=>{if(st){st[k]=(st[k]||0)+(smallTeam()?1:2);st.ready=false}return st}));
   if(type==='imp')cand.forEach(b=>net.tx(`${R()}/backlog/${b.id}`,st=>{if(st&&!st.imp){st.imp=rnd(IMPEDIMENTOS);st.ready=false}return st}));
   if(type==='prefeito'){if(!cand.length)return;const b=cand.slice().sort((a,b)=>progressPct(b,bstate[b.id],meta)-progressPct(a,bstate[a.id],meta))[0];c.target=b.id;prefeitoSprint=meta.sprint}
   if(type==='mudanca'){if(!cand.length)return;const b=rnd(cand);c.target=b.id;const add={};if(cnt.design)add.design=Math.max(1,Math.ceil(cnt.design*0.8));if(cnt.po)add.po=1;
@@ -1932,7 +1941,7 @@ function crisisTick(){
   if(meta.phase!=='sprint')return;const now=net.now(),list=activeCrises(),ap=activePlayers();
   // agenda: quando não há crise, depois de um tempo começam 1 a 3 ao mesmo tempo (uma por grupo)
   if(!list.length){
-    if(!nextCrisisAt)nextCrisisAt=Date.now()+50000;
+    if(!nextCrisisAt)nextCrisisAt=Date.now()+(nOn()<=10?90000:50000);
     if(meta.autoCrisis!==false&&Date.now()>nextCrisisAt&&meta.endsAt-now>75000&&Object.keys(ap).length>=2){
       const n=Object.keys(ap).length,k=n>=18?3:n>=8?2:1;
       let av=shuffle(crisisTypesAvailable().filter(t=>t!=='mudanca'||Math.random()<0.3));
@@ -1940,7 +1949,7 @@ function crisisTick(){
       // prefeito: raro (no máximo 1 vez por sprint, 15% de chance) e só se tiver obra adiantada
       if(prefeitoSprint!==meta.sprint&&Math.random()<0.15&&sprintCand().some(b=>progressPct(b,bstate[b.id],meta)>=0.6))av.unshift('prefeito');
       av.slice(0,k).forEach(t=>startCrisis(t));
-      nextCrisisAt=Date.now()+95000+Math.random()*35000;
+      nextCrisisAt=Date.now()+(95000+Math.random()*35000)*(n<=6?2.2:n<=10?1.6:1);
     }
     return;
   }
@@ -1970,12 +1979,12 @@ function crisisTick(){
 /* problemas aparecem sozinhos nas obras da sprint, de todas as classes */
 let lastIssue=0;
 function issueTick(){
-  if(meta.phase!=='sprint')return;const every=hasB('hospital')?34000:20000;if(Date.now()-lastIssue<every)return;lastIssue=Date.now();
+  if(meta.phase!=='sprint')return;const every=(hasB('hospital')?34000:20000)*(nOn()<=6?2.4:nOn()<=10?1.8:nOn()<=16?1.3:1);if(Date.now()-lastIssue<every)return;lastIssue=Date.now();
   const cand=sprintCand();if(!cand.length)return;const cnt=classCounts();
   const kinds=Object.keys(ISSUES).filter(k=>cnt[ISSUES[k].cls]);if(cnt.sm)kinds.push('imp');if(!kinds.length)return;
   const b=rnd(cand),k=rnd(kinds),st=bstate[b.id]||{};
   if(k==='imp'){if(st.imp)return;const txt=rnd(IMPEDIMENTOS);net.tx(`${R()}/backlog/${b.id}`,s=>{if(s&&!s.imp){s.imp=txt;s.ready=false}return s});net.push(`${R()}/log`,{m:`⚠️ Impedimento em ${b.nome}: ${txt}`,t:net.now()});return}
-  if((st[k]||0)>=2)return;
+  if((st[k]||0)>=(smallTeam()?1:2))return;
   net.tx(`${R()}/backlog/${b.id}`,s=>{if(s){s[k]=(s[k]||0)+1;s.ready=false}return s});
   net.push(`${R()}/log`,{m:`${ISSUES[k].ic} ${b.nome}: apareceu ${['ux','duv'].includes(k)?'uma':'um'} ${ISSUES[k].nome}!`,t:net.now()});
 }
@@ -2098,7 +2107,8 @@ function hostTick(){
   if(meta.phase==='sprint'&&meta.endsAt&&net.now()>=meta.endsAt){endSprint();return}
   // mantém a contagem de alunos por classe sempre atualizada (quem entra depois também conta)
   if(meta.phase==='planning'||meta.phase==='sprint'){const cc=classCounts(),old=meta.cnt||{};
-    if(Object.keys(CLASSES).some(k=>(cc[k]||0)!==(old[k]||0)))net.update(`${R()}/meta`,{cnt:cc});}
+    const nn=Object.values(cc).reduce((a,v)=>a+v,0);
+    if(Object.keys(CLASSES).some(k=>(cc[k]||0)!==(old[k]||0))||nn!==meta.n)net.update(`${R()}/meta`,{cnt:cc,n:nn});}
   // bônus da Estação: inauguração (uma vez)
   const done=new Set(BUILDINGS.filter(b=>hasB(b.id)).map(b=>b.id));
   if(hostDone&&done.has('estacao')&&!hostDone.has('estacao')){Object.keys(activePlayers()).forEach(id=>addXP(id,50));net.push(`${R()}/log`,{m:'🚉🎉 INAUGURAÇÃO DA ESTAÇÃO! A vila está ligada ao mundo: +50 XP para todo mundo!',t:net.now()})}
@@ -2125,7 +2135,7 @@ function renderTeacher(){
   if(ph==='review')c=`<button onclick="tAction('retro')">💬 Ir para a retrospectiva</button>`;
   if(ph==='retro')c+=`<button class="sec" onclick="const r=document.querySelector('#tRetroBig');r.dataset.hide=r.dataset.hide==='1'?'0':'1';renderTeacher()">🗒️ Mostrar/ocultar notas</button>`;
   const ckey=ph+(meta.paused?'p':'');if($('#tControls').dataset.ph!==ckey){$('#tControls').innerHTML=c;$('#tControls').dataset.ph=ckey}
-  renderTeacherLive(ph);
+  renderTeacherLive(ph);renderTeacherNeed(ph);
   $('#tRetroBig').classList.toggle('hidden',ph!=='retro'||$('#tRetroBig').dataset.hide==='1');
   // kanban
   const tl=tally();
@@ -2149,6 +2159,32 @@ function renderTeacher(){
     $('#tMissed').innerHTML=qs.length?qs.map(q=>`<div style="padding:3px 0;border-bottom:1px solid #4a3426">❌ ${q.err} · ✅ ${q.ok} — ${esc(q.t)}</div>`).join(''):'<span class="mut">Aparece durante a sprint.</span>';}
   const hist=meta.hist||{};const ks=Object.keys(hist).sort((a,b)=>a-b);
   $('#tVel').innerHTML=ks.length?ks.map(k=>`Sprint ${k}: ${'🟩'.repeat(hist[k])||'—'} ${hist[k]}`).join('<br>'):'Aparece aqui depois da primeira sprint.';
+}
+function remainingOf(b,st){ // o que ainda falta numa obra: trabalho por classe + problemas + aceite
+  const r=reqsFor(b,meta,st),p=(st&&st.prog)||{},work={};
+  for(const k in r){const left=r[k]-(p[k]||0);if(left>0)work[k]=left}
+  const iss={};for(const k in ISSUES)if(st&&st[k]>0)iss[k]=st[k];
+  return {work,iss,imp:st&&st.imp,ready:!!(st&&st.ready),r,p};
+}
+function renderTeacherNeed(ph){
+  const el=$('#tNeed');if(!el)return;
+  const cand=sprintCand();
+  if(ph!=='sprint'&&!cand.length){el.innerHTML='<span class="mut" style="font-size:12px">Aparece quando a sprint começa.</span>';el._h='';return}
+  const tot={};let h='';
+  for(const b of cand){const st=bstate[b.id]||{},R_=remainingOf(b,st),pct=Math.round(progressPct(b,st,meta)*100);
+    const chips=[];
+    for(const k in R_.work){tot[k]=(tot[k]||0)+R_.work[k];chips.push(`<span class="chip todo">${CLASSES[k].emoji} ${CLASSES[k].nome}: faltam ${R_.work[k]} (${R_.p[k]||0}/${R_.r[k]})</span>`)}
+    for(const k in R_.iss){const c=ISSUES[k].cls;tot[c]=(tot[c]||0)+R_.iss[k];chips.push(`<span class="chip todo">${ISSUES[k].ic} ${R_.iss[k]} ${R_.iss[k]>1?ISSUES[k].plural:ISSUES[k].nome} → ${CLASSES[c].emoji}</span>`)}
+    if(R_.imp){tot.sm=(tot.sm||0)+1;chips.push(`<span class="chip todo">⚠️ ${esc(R_.imp)} → ${CLASSES.sm.emoji}</span>`)}
+    const worked=Object.keys(R_.r).filter(k=>!R_.work[k]);
+    worked.forEach(k=>chips.push(`<span class="chip ok">${CLASSES[k].emoji} ${R_.r[k]}/${R_.r[k]} ✓</span>`));
+    let status='';
+    if(!Object.keys(R_.work).length&&!Object.keys(R_.iss).length&&!R_.imp){status=R_.ready?`<b style="color:#fde047">✋ Só falta o aceite do 📋 PO</b>`:`<b style="color:#86efac">✅ Tudo feito: finalizando…</b>`;if(R_.ready)tot.po=(tot.po||0)+1}
+    h+=`<div class="nd"><b>${b.ic} ${b.nome}</b> <span class="mut">${pct}%</span><div class="bar"><i style="width:${pct}%"></i></div>${status}${chips.join('')}</div>`}
+  const top=Object.entries(tot).sort((a,b)=>b[1]-a[1]);
+  const sum=top.length?`<div style="font-size:12.5px;margin-bottom:4px">🚧 <b>Gargalo:</b> ${top.map(([k,v])=>`${CLASSES[k].emoji} ${v}`).join(' · ')} <span class="mut">(tarefas que faltam por classe)</span></div>`:'';
+  const html=sum+(h||'<span class="mut" style="font-size:12px">Nenhuma obra na sprint.</span>');
+  if(el._h!==html){el._h=html;el.innerHTML=html}
 }
 function renderTeacherLive(ph){
   const el=$('#tLive');if(!el)return;
